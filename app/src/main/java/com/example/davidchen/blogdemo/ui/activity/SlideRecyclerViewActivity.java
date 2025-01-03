@@ -52,6 +52,13 @@ public class SlideRecyclerViewActivity extends AppCompatActivity {
         }
         mInventoryAdapter = new InventoryAdapter(this, mInventories);
         recycler_view_list.setAdapter(mInventoryAdapter);
+        recycler_view_list.setStateCallback(new SlideRecyclerView.StateCallback(){
+
+            @Override
+            public void dragEnable(boolean enable) {
+
+            }
+        });
         mInventoryAdapter.setOnDeleteClickListener(new InventoryAdapter.OnDeleteClickLister() {
             @Override
             public void onDeleteClick(View view, int position) {

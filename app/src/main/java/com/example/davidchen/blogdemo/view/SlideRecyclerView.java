@@ -3,7 +3,6 @@ package com.example.davidchen.blogdemo.view;
 import android.content.Context;
 import android.graphics.Rect;
 import android.support.annotation.Nullable;
-import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
@@ -18,10 +17,9 @@ import android.widget.Scroller;
  * <p>
  * Created by DavidChen on 2018/5/29.
  */
-
 public class SlideRecyclerView extends RecyclerView {
 
-    private static final String TAG = "SlideRecyclerView";
+    private static final String TAG = "SwipeDeleteRecyclerView";
     private static final int INVALID_POSITION = -1; // 触摸到的点不在子View范围内
     private static final int INVALID_CHILD_WIDTH = -1;  // 子ItemView不含两个子View
     private static final int SNAP_VELOCITY = 600;   // 最小滑动速度
@@ -34,8 +32,10 @@ public class SlideRecyclerView extends RecyclerView {
     private float mFirstX, mFirstY; // 首次触碰范围
     private boolean mIsSlide;   // 是否滑动子View
     private ViewGroup mFlingView;   // 触碰的子View
-    private int mPosition;  // 触碰的view的位置
+    private int mPosition;  // 触碰的view在可见item中的位置
     private int mMenuViewWidth;    // 菜单按钮宽度
+
+    private StateCallback stateCallback;
 
     public SlideRecyclerView(Context context) {
         this(context, null);
@@ -51,6 +51,8 @@ public class SlideRecyclerView extends RecyclerView {
         mScroller = new Scroller(context);
     }
 
+    boolean isTouchOpened = false;
+
     @Override
     public boolean onInterceptTouchEvent(MotionEvent e) {
         int x = (int) e.getX();
@@ -58,6 +60,7 @@ public class SlideRecyclerView extends RecyclerView {
         obtainVelocity(e);
         switch (e.getAction()) {
             case MotionEvent.ACTION_DOWN:
+//                LogUtil.e("onInterceptTouchEvent() -> ACTION_DOWN");
                 if (!mScroller.isFinished()) {  // 如果动画还没停止，则立即终止动画
                     mScroller.abortAnimation();
                 }
@@ -65,12 +68,19 @@ public class SlideRecyclerView extends RecyclerView {
                 mFirstY = y;
                 mPosition = pointToPosition(x, y);  // 获取触碰点所在的position
                 if (mPosition != INVALID_POSITION) {
+                    stateCallback.dragEnable(false);
+                    //LogUtil.e("dragEnable : false");
                     View view = mFlingView;
                     // 获取触碰点所在的view
-                    mFlingView = (ViewGroup) getChildAt(mPosition - ((LinearLayoutManager) getLayoutManager()).findFirstVisibleItemPosition());
+//                    mFlingView = (ViewGroup) getChildAt(mPosition - ((LinearLayoutManager) getLayoutManager()).findFirstVisibleItemPosition());
+                    mFlingView = (ViewGroup) getChildAt(mPosition);
+                    // 点击的是否是一打开的item
+                    isTouchOpened = mFlingView == view && mFlingView.getScrollX() != 0;
                     // 这里判断一下如果之前触碰的view已经打开，而当前碰到的view不是那个view则立即关闭之前的view，此处并不需要担动画没完成冲突，因为之前已经abortAnimation
                     if (view != null && mFlingView != view && view.getScrollX() != 0) {
                         view.scrollTo(0, 0);
+                        //LogUtil.e("onInterceptTouchEvent() -> ACTION_DOWN 拦截事件-关闭已打开的menu");
+                        return true;
                     }
                     // 这里进行了强制的要求，RecyclerView的子ViewGroup必须要有2个子view,这样菜单按钮才会有值，
                     // 需要注意的是:如果不定制RecyclerView的子View，则要求子View必须要有固定的width。
@@ -83,6 +93,7 @@ public class SlideRecyclerView extends RecyclerView {
                 }
                 break;
             case MotionEvent.ACTION_MOVE:
+//                LogUtil.e("onInterceptTouchEvent() -> ACTION_MOVE");
                 mVelocityTracker.computeCurrentVelocity(1000);
                 // 此处有俩判断，满足其一则认为是侧滑：
                 // 1.如果x方向速度大于y方向速度，且大于最小速度限制；
@@ -92,8 +103,18 @@ public class SlideRecyclerView extends RecyclerView {
                 if (Math.abs(xVelocity) > SNAP_VELOCITY && Math.abs(xVelocity) > Math.abs(yVelocity)
                         || Math.abs(x - mFirstX) >= mTouchSlop
                         && Math.abs(x - mFirstX) > Math.abs(y - mFirstY)) {
+
+                    //LogUtil.e("onInterceptTouchEvent() -> ACTION_MOVE true");
                     mIsSlide = true;
+
+                    //LogUtil.e("dragEnable : false");
+                    stateCallback.dragEnable(false);
                     return true;
+                } else {
+                    if (!isTouchOpened) {
+                        //LogUtil.e("dragEnable : true");
+                        stateCallback.dragEnable(true);
+                    }
                 }
                 break;
             case MotionEvent.ACTION_UP:
@@ -131,7 +152,12 @@ public class SlideRecyclerView extends RecyclerView {
                         // 2.横向滑动速度大于最小滑动速度；
                         // 注意：之所以要小于负值，是因为向左滑则速度为负值
                         if (mVelocityTracker.getXVelocity() < -SNAP_VELOCITY) {    // 向左侧滑达到侧滑最低速度，则打开
-                            mScroller.startScroll(scrollX, 0, mMenuViewWidth - scrollX, 0, Math.abs(mMenuViewWidth - scrollX));
+                            int delt = Math.abs(mMenuViewWidth - scrollX);
+                            int t = (int) (delt / mVelocityTracker.getXVelocity() * 1000);
+                            mScroller.startScroll(scrollX, 0, mMenuViewWidth - scrollX, 0, Math.abs(t));
+//                            Log.e("wsjLib", "time: " + Math.abs(t));
+//                            Log.e("wsjLib", "XVelocity: " + mVelocityTracker.getXVelocity());
+//                            Log.e("wsjLib", "move distance: " + Math.abs(mMenuViewWidth - scrollX));
                         } else if (mVelocityTracker.getXVelocity() >= SNAP_VELOCITY) {  // 向右侧滑达到侧滑最低速度，则关闭
                             mScroller.startScroll(scrollX, 0, -scrollX, 0, Math.abs(scrollX));
                         } else if (scrollX >= mMenuViewWidth / 2) { // 如果超过删除按钮一半，则打开
@@ -176,7 +202,7 @@ public class SlideRecyclerView extends RecyclerView {
     }
 
     public int pointToPosition(int x, int y) {
-        int firstPosition = ((LinearLayoutManager) getLayoutManager()).findFirstVisibleItemPosition();
+//        int firstPosition = ((LinearLayoutManager) getLayoutManager()).findFirstVisibleItemPosition();
         Rect frame = mTouchFrame;
         if (frame == null) {
             mTouchFrame = new Rect();
@@ -188,8 +214,9 @@ public class SlideRecyclerView extends RecyclerView {
             final View child = getChildAt(i);
             if (child.getVisibility() == View.VISIBLE) {
                 child.getHitRect(frame);
+//                Log.e("wsjLib", "check: " + i);
                 if (frame.contains(x, y)) {
-                    return firstPosition + i;
+                    return i;
                 }
             }
         }
@@ -199,6 +226,7 @@ public class SlideRecyclerView extends RecyclerView {
     @Override
     public void computeScroll() {
         if (mScroller.computeScrollOffset()) {
+//            Log.e("wsjLib", "getCurrX: " + mScroller.getCurrX());
             mFlingView.scrollTo(mScroller.getCurrX(), mScroller.getCurrY());
             invalidate();
         }
@@ -212,5 +240,13 @@ public class SlideRecyclerView extends RecyclerView {
         if (mFlingView != null && mFlingView.getScrollX() != 0) {
             mFlingView.scrollTo(0, 0);
         }
+    }
+
+    public void setStateCallback(StateCallback stateCallback) {
+        this.stateCallback = stateCallback;
+    }
+
+    public interface StateCallback {
+        void dragEnable(boolean enable);
     }
 }
